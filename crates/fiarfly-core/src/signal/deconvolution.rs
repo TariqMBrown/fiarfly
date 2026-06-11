@@ -10,9 +10,9 @@
 //!
 //! Minimises: ½ ‖y − c‖² + λ ‖s‖₁  subject to  c ≥ 0, s ≥ 0.
 
+use crate::FiarflyError;
 use ndarray::{s, Array2};
 use rayon::prelude::*;
-use crate::FiarflyError;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -39,7 +39,11 @@ pub struct OasisParams {
 
 impl Default for OasisParams {
     fn default() -> Self {
-        Self { g: None, sn: None, lambda: 0.0 }
+        Self {
+            g: None,
+            sn: None,
+            lambda: 0.0,
+        }
     }
 }
 
@@ -83,21 +87,26 @@ pub fn deconvolve_oasis(
         .collect();
 
     // Unpack into output arrays.
-    let mut calcium    = Array2::<f32>::zeros((n_rois, n_frames));
-    let mut spikes     = Array2::<f32>::zeros((n_rois, n_frames));
-    let mut g_est      = Vec::with_capacity(n_rois);
-    let mut sn_est     = Vec::with_capacity(n_rois);
+    let mut calcium = Array2::<f32>::zeros((n_rois, n_frames));
+    let mut spikes = Array2::<f32>::zeros((n_rois, n_frames));
+    let mut g_est = Vec::with_capacity(n_rois);
+    let mut sn_est = Vec::with_capacity(n_rois);
 
     for (i, (cal, spk, g, sn)) in results.into_iter().enumerate() {
         for t in 0..n_frames {
             calcium[[i, t]] = cal[t];
-            spikes[[i, t]]  = spk[t];
+            spikes[[i, t]] = spk[t];
         }
         g_est.push(g);
         sn_est.push(sn);
     }
 
-    Ok(OasisResult { calcium, spikes, g_estimated: g_est, sn_estimated: sn_est })
+    Ok(OasisResult {
+        calcium,
+        spikes,
+        g_estimated: g_est,
+        sn_estimated: sn_est,
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,7 +120,10 @@ fn oasis_ar1_single(y: &[f32], params: &OasisParams) -> (Vec<f32>, Vec<f32>, f32
         return (vec![], vec![], 0.0, 0.0);
     }
 
-    let g  = params.g .unwrap_or_else(|| estimate_g(y)).clamp(0.05, 0.9999);
+    let g = params
+        .g
+        .unwrap_or_else(|| estimate_g(y))
+        .clamp(0.05, 0.9999);
     let sn = params.sn.unwrap_or_else(|| estimate_noise(y)).max(1e-10);
     let lambda = params.lambda;
 
@@ -137,15 +149,17 @@ fn oasis_ar1_single(y: &[f32], params: &OasisParams) -> (Vec<f32>, Vec<f32>, f32
     // g-factor so no O(n) per-pool scan is needed.
 
     struct Pool {
-        h:       f32,   // optimal amplitude at pool start
+        h: f32, // optimal amplitude at pool start
         t_start: usize,
-        length:  usize,
-        num:     f32,   // running numerator
-        den:     f32,   // running denominator
+        length: usize,
+        num: f32, // running numerator
+        den: f32, // running denominator
     }
 
     let compute_h = |num: f32, den: f32| -> f32 {
-        if den < 1e-15 { return 0.0; }
+        if den < 1e-15 {
+            return 0.0;
+        }
         ((num - lambda) / den).max(0.0)
     };
 
@@ -165,7 +179,9 @@ fn oasis_ar1_single(y: &[f32], params: &OasisParams) -> (Vec<f32>, Vec<f32>, f32
         // Merge while the last two pools violate monotonicity.
         loop {
             let len = pools.len();
-            if len < 2 { break; }
+            if len < 2 {
+                break;
+            }
 
             let (prev_h, prev_len) = {
                 let p = &pools[len - 2];
@@ -182,11 +198,11 @@ fn oasis_ar1_single(y: &[f32], params: &OasisParams) -> (Vec<f32>, Vec<f32>, f32
             // Merge: pop last pool, accumulate into second-to-last.
             let q = pools.pop().unwrap();
             let p = pools.last_mut().unwrap();
-            let g_fac  = g.powi(p.length as i32);
+            let g_fac = g.powi(p.length as i32);
             let g2_fac = g.powi(2 * p.length as i32);
-            p.num    = p.num + g_fac  * q.num;
-            p.den    = p.den + g2_fac * q.den;
-            p.h      = compute_h(p.num, p.den);
+            p.num += g_fac * q.num;
+            p.den += g2_fac * q.den;
+            p.h = compute_h(p.num, p.den);
             p.length += q.length;
         }
     }
@@ -221,12 +237,16 @@ fn oasis_ar1_single(y: &[f32], params: &OasisParams) -> (Vec<f32>, Vec<f32>, f32
 /// Falls back to 0.95 for very short or constant traces.
 fn estimate_g(y: &[f32]) -> f32 {
     let n = y.len();
-    if n < 4 { return 0.95; }
+    if n < 4 {
+        return 0.95;
+    }
 
     let mean: f32 = y.iter().sum::<f32>() / n as f32;
 
     let var: f32 = y.iter().map(|&v| (v - mean).powi(2)).sum::<f32>() / n as f32;
-    if var < 1e-10 { return 0.95; }
+    if var < 1e-10 {
+        return 0.95;
+    }
 
     let cov: f32 = y[..n - 1]
         .iter()
@@ -243,7 +263,9 @@ fn estimate_g(y: &[f32]) -> f32 {
 /// For Gaussian noise: σ ≈ median(|Δy|) / √2 × 1.4826.
 /// This is robust to calcium transients (which inflate the variance).
 fn estimate_noise(y: &[f32]) -> f32 {
-    if y.len() < 2 { return 1.0; }
+    if y.len() < 2 {
+        return 1.0;
+    }
     let mut diffs: Vec<f32> = y.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
     diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let median = diffs[diffs.len() / 2];
@@ -267,7 +289,11 @@ mod tests {
         let n = spikes.len();
         let mut c = vec![0.0_f32; n];
         for t in 0..n {
-            c[t] = if t == 0 { spikes[0] } else { g * c[t - 1] + spikes[t] };
+            c[t] = if t == 0 {
+                spikes[0]
+            } else {
+                g * c[t - 1] + spikes[t]
+            };
         }
         // No noise for deterministic tests.
         let _ = noise_std;
@@ -284,7 +310,11 @@ mod tests {
         let trace = synthetic_trace(0.9, &spike_vec, 0.0);
         let arr = Array2::from_shape_vec((1, n), trace).unwrap();
 
-        let params = OasisParams { g: Some(0.9), sn: Some(1e-6), lambda: 0.0 };
+        let params = OasisParams {
+            g: Some(0.9),
+            sn: Some(1e-6),
+            lambda: 0.0,
+        };
         let result = deconvolve_oasis(&arr, &params, 30.0).unwrap();
 
         // Spike should be at or near frame 10.
@@ -313,8 +343,8 @@ mod tests {
     fn g_estimation_reasonable() {
         // Build trace with known g = 0.9.
         let mut spike_vec = vec![0.0_f32; 200];
-        spike_vec[20]  = 1.0;
-        spike_vec[80]  = 1.0;
+        spike_vec[20] = 1.0;
+        spike_vec[80] = 1.0;
         spike_vec[150] = 0.8;
         let trace = synthetic_trace(0.9, &spike_vec, 0.0);
         let g_hat = estimate_g(&trace);

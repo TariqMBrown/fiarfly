@@ -212,12 +212,20 @@ mod integration_tests {
     fn dispatch_paired_paths_agree_qualitatively() {
         let a = [10.0_f32, 11.0, 12.0, 9.0, 13.0];
         let b = [8.0_f32, 9.5, 10.5, 7.0, 11.0];
-        let p_param = run_test(&[&a[..], &b[..]], Comparison::PairedTwo, TestKind::Parametric)
-            .unwrap()
-            .p_value;
-        let p_np = run_test(&[&a[..], &b[..]], Comparison::PairedTwo, TestKind::NonParametric)
-            .unwrap()
-            .p_value;
+        let p_param = run_test(
+            &[&a[..], &b[..]],
+            Comparison::PairedTwo,
+            TestKind::Parametric,
+        )
+        .unwrap()
+        .p_value;
+        let p_np = run_test(
+            &[&a[..], &b[..]],
+            Comparison::PairedTwo,
+            TestKind::NonParametric,
+        )
+        .unwrap()
+        .p_value;
         assert!(p_param < 0.05);
         assert!(p_np < 0.10);
     }

@@ -14,9 +14,9 @@
 //! of a box filter with width w ≈ σ√12 gives σ_box ≈ σ to < 3 % error).
 //! No external crates required.
 
+use crate::{FiarflyError, ImageStack};
 use ndarray::{s, Array2};
 use rayon::prelude::*;
-use crate::{FiarflyError, ImageStack};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -37,7 +37,10 @@ pub struct SpatialFilterParams {
 
 impl Default for SpatialFilterParams {
     fn default() -> Self {
-        Self { sigma: 30.0, clip_negative: true }
+        Self {
+            sigma: 30.0,
+            clip_negative: true,
+        }
     }
 }
 
@@ -58,9 +61,7 @@ pub fn spatial_highpass(
         return Err(FiarflyError::InvalidParameter("Empty stack".into()));
     }
     if params.sigma <= 0.0 {
-        return Err(FiarflyError::InvalidParameter(
-            "sigma must be > 0".into(),
-        ));
+        return Err(FiarflyError::InvalidParameter("sigma must be > 0".into()));
     }
 
     // Gaussian approximated by 3 passes of box filter.
@@ -79,9 +80,7 @@ pub fn spatial_highpass(
                     (frame[[r, c]] - background[[r, c]]).max(0.0)
                 })
             } else {
-                Array2::from_shape_fn((height, width), |(r, c)| {
-                    frame[[r, c]] - background[[r, c]]
-                })
+                Array2::from_shape_fn((height, width), |(r, c)| frame[[r, c]] - background[[r, c]])
             }
         })
         .collect();
@@ -103,7 +102,7 @@ pub fn spatial_highpass(
 /// σ² = w² / 12 × 3 = w² / 4, so w = 2σ (rounded up to the next odd integer).
 fn gaussian_to_box_width(sigma: f32) -> usize {
     let w = (sigma * 2.0).round() as usize;
-    if w % 2 == 0 { w + 1 } else { w }.max(3)
+    if w.is_multiple_of(2) { w + 1 } else { w }.max(3)
 }
 
 /// Apply three passes of a 1D box filter in each spatial dimension
@@ -133,16 +132,20 @@ fn box_blur_rows(frame: &Array2<f32>, w: usize) -> Array2<f32> {
             // Add new right element.
             let right = c + half;
             if right < width {
-                sum   += row[right];
+                sum += row[right];
                 count += 1;
             }
             // Remove left element that's now out of window.
-            if c >= half + 1 {
+            if c > half {
                 let left = c - half - 1;
-                sum   -= row[left];
+                sum -= row[left];
                 count -= 1;
             }
-            out[[r, c]] = if count > 0 { sum / count as f32 } else { row[c] };
+            out[[r, c]] = if count > 0 {
+                sum / count as f32
+            } else {
+                row[c]
+            };
         }
     }
     out
@@ -161,15 +164,19 @@ fn box_blur_cols(frame: &Array2<f32>, w: usize) -> Array2<f32> {
         for r in 0..h {
             let bottom = r + half;
             if bottom < h {
-                sum   += frame[[bottom, c]];
+                sum += frame[[bottom, c]];
                 count += 1;
             }
-            if r >= half + 1 {
+            if r > half {
                 let top = r - half - 1;
-                sum   -= frame[[top, c]];
+                sum -= frame[[top, c]];
                 count -= 1;
             }
-            out[[r, c]] = if count > 0 { sum / count as f32 } else { frame[[r, c]] };
+            out[[r, c]] = if count > 0 {
+                sum / count as f32
+            } else {
+                frame[[r, c]]
+            };
         }
     }
     out
@@ -189,10 +196,16 @@ mod tests {
         // Uniform frame — after subtraction should be all zeros (or near zero).
         let mut stack = Array3::<f32>::zeros([3, 64, 64]);
         stack.fill(100.0);
-        let params = SpatialFilterParams { sigma: 10.0, clip_negative: false };
+        let params = SpatialFilterParams {
+            sigma: 10.0,
+            clip_negative: false,
+        };
         let out = spatial_highpass(&stack, &params).unwrap();
         for &v in out.iter() {
-            assert!(v.abs() < 1.0, "Expected ~0 after removing flat background, got {v}");
+            assert!(
+                v.abs() < 1.0,
+                "Expected ~0 after removing flat background, got {v}"
+            );
         }
     }
 
@@ -205,13 +218,20 @@ mod tests {
         let n = 1usize;
         let mut stack = Array3::<f32>::from_elem([n, h, w], 50.0_f32);
         // Add a bright spot in the centre.
-        for r in 30..34 { for c in 30..34 { stack[[0, r, c]] = 200.0; } }
+        for r in 30..34 {
+            for c in 30..34 {
+                stack[[0, r, c]] = 200.0;
+            }
+        }
 
-        let params = SpatialFilterParams { sigma: 15.0, clip_negative: true };
+        let params = SpatialFilterParams {
+            sigma: 15.0,
+            clip_negative: true,
+        };
         let out = spatial_highpass(&stack, &params).unwrap();
 
-        let spot_val   = out[[0, 31, 31]];
-        let bg_val     = out[[0, 5, 5]];
+        let spot_val = out[[0, 31, 31]];
+        let bg_val = out[[0, 5, 5]];
         assert!(
             spot_val > bg_val + 10.0,
             "Spot ({spot_val:.2}) should be much brighter than background ({bg_val:.2})"
@@ -222,8 +242,14 @@ mod tests {
     fn clip_negative_works() {
         let mut stack = Array3::<f32>::zeros([1, 16, 16]);
         stack.fill(1.0);
-        let params_clip = SpatialFilterParams { sigma: 5.0, clip_negative: true };
+        let params_clip = SpatialFilterParams {
+            sigma: 5.0,
+            clip_negative: true,
+        };
         let out = spatial_highpass(&stack, &params_clip).unwrap();
-        assert!(out.iter().all(|&v| v >= 0.0), "All values should be ≥ 0 when clipping");
+        assert!(
+            out.iter().all(|&v| v >= 0.0),
+            "All values should be ≥ 0 when clipping"
+        );
     }
 }

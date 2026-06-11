@@ -1,8 +1,8 @@
 //! Per-ROI metrics. All take a 2D `[n_rois, n_frames]` view and a resolved
 //! frame range; all return one value per ROI.
 
-use ndarray::{s, ArrayView2};
 use super::window::ResolvedRange;
+use ndarray::{s, ArrayView2};
 
 /// Identifier for which scalar metric to compute over a window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +62,9 @@ pub fn auc_trapezoid(
         .map(|r| {
             let row = data.slice(s![r, range.start..range.end]);
             let n = row.len();
-            if n < 2 { return 0.0; }
+            if n < 2 {
+                return 0.0;
+            }
             let mut sum = 0.0_f32;
             for i in 0..n - 1 {
                 sum += 0.5 * (row[i] + row[i + 1]);
@@ -111,7 +113,9 @@ pub fn rise_time_frames(
         .map(|r| {
             let row = data.slice(s![r, range.start..range.end]);
             let n = row.len();
-            if n == 0 { return 0.0; }
+            if n == 0 {
+                return 0.0;
+            }
             // Find peak.
             let mut peak_i = 0_usize;
             let mut peak_v = f32::NEG_INFINITY;
@@ -131,8 +135,13 @@ pub fn rise_time_frames(
             let mut hi_i = None;
             for i in 0..=peak_i {
                 let v = row[i];
-                if lo_i.is_none() && v >= lo { lo_i = Some(i); }
-                if hi_i.is_none() && v >= hi { hi_i = Some(i); break; }
+                if lo_i.is_none() && v >= lo {
+                    lo_i = Some(i);
+                }
+                if hi_i.is_none() && v >= hi {
+                    hi_i = Some(i);
+                    break;
+                }
             }
             match (lo_i, hi_i) {
                 (Some(a), Some(b)) if b >= a => (b - a) as f32 * dt,
@@ -154,10 +163,7 @@ mod tests {
     #[test]
     fn window_mean_matches_hand_calc() {
         // 2 ROIs × 5 frames
-        let a = arr2(&[
-            [0.0_f32, 1.0, 2.0, 3.0, 4.0],
-            [4.0,     3.0, 2.0, 1.0, 0.0],
-        ]);
+        let a = arr2(&[[0.0_f32, 1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0, 0.0]]);
         // Mean over frames 1..4 = (1+2+3)/3 = 2.0 for both
         let m = dff_window_mean(a.view(), rng(1, 4));
         assert!((m[0] - 2.0).abs() < 1e-6);
@@ -166,10 +172,7 @@ mod tests {
 
     #[test]
     fn window_peak_picks_max() {
-        let a = arr2(&[
-            [0.0_f32, 0.5, 0.9, 0.3, 0.0],
-            [-1.0,   -0.5, 0.0, 0.5, 0.2],
-        ]);
+        let a = arr2(&[[0.0_f32, 0.5, 0.9, 0.3, 0.0], [-1.0, -0.5, 0.0, 0.5, 0.2]]);
         let p = dff_window_peak(a.view(), rng(0, 5));
         assert!((p[0] - 0.9).abs() < 1e-6);
         assert!((p[1] - 0.5).abs() < 1e-6);
@@ -227,10 +230,7 @@ mod tests {
 
     #[test]
     fn dff_at_frame_picks_column() {
-        let a = arr2(&[
-            [0.0_f32, 10.0, 20.0],
-            [1.0,     11.0, 21.0],
-        ]);
+        let a = arr2(&[[0.0_f32, 10.0, 20.0], [1.0, 11.0, 21.0]]);
         let v = dff_at_frame(a.view(), 1);
         assert_eq!(v, vec![10.0, 11.0]);
     }

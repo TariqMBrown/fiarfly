@@ -1,10 +1,10 @@
 //! TIFF stack loader.
 
+use crate::{FiarflyError, Frame, ImageStack};
+use ndarray::s;
 use std::fs::File;
 use std::io::BufReader;
 use tiff::decoder::{Decoder, DecodingResult};
-use ndarray::s;
-use crate::{FiarflyError, Frame, ImageStack};
 
 /// Load all frames of a multi-page TIFF into an `ImageStack`.
 pub fn load_tiff(path: &std::path::Path) -> Result<ImageStack, FiarflyError> {
@@ -73,7 +73,6 @@ impl TiffReader {
         let file = File::open(path)?;
         Ok(Decoder::new(BufReader::new(file))?)
     }
-
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,17 +83,18 @@ impl TiffReader {
 /// float representation).  Compatible with Fiji/ImageJ and most analysis tools.
 pub fn save_stack(stack: &ImageStack, path: &std::path::Path) -> Result<(), FiarflyError> {
     use std::io::BufWriter;
-    use tiff::encoder::{TiffEncoder, colortype::Gray16};
+    use tiff::encoder::{colortype::Gray16, TiffEncoder};
 
     let (n_frames, height, width) = stack.dim();
     let file = std::fs::File::create(path)?;
     let mut writer = BufWriter::new(file);
-    let mut encoder = TiffEncoder::new(&mut writer)
-        .map_err(|e| FiarflyError::Export(e.to_string()))?;
+    let mut encoder =
+        TiffEncoder::new(&mut writer).map_err(|e| FiarflyError::Export(e.to_string()))?;
 
     for i in 0..n_frames {
         let frame = stack.slice(ndarray::s![i, .., ..]);
-        let pixels: Vec<u16> = frame.iter()
+        let pixels: Vec<u16> = frame
+            .iter()
             .map(|&v| (v.clamp(0.0, 1.0) * 65535.0) as u16)
             .collect();
         encoder
@@ -107,14 +107,17 @@ pub fn save_stack(stack: &ImageStack, path: &std::path::Path) -> Result<(), Fiar
 impl TiffReader {
     fn decode(&self, result: DecodingResult) -> Result<Frame, FiarflyError> {
         let pixels: Vec<f32> = match result {
-            DecodingResult::U8(v)  => v.into_iter().map(|x| x as f32 / 255.0).collect(),
+            DecodingResult::U8(v) => v.into_iter().map(|x| x as f32 / 255.0).collect(),
             DecodingResult::U16(v) => v.into_iter().map(|x| x as f32 / 65535.0).collect(),
             DecodingResult::U32(v) => v.into_iter().map(|x| x as f32 / u32::MAX as f32).collect(),
             DecodingResult::F32(v) => v,
             DecodingResult::F64(v) => v.into_iter().map(|x| x as f32).collect(),
-            _ => return Err(FiarflyError::UnsupportedFormat(
-                "Pixel type not supported. Need U8, U16, U32, F32, or F64 grayscale TIFF.".into(),
-            )),
+            _ => {
+                return Err(FiarflyError::UnsupportedFormat(
+                    "Pixel type not supported. Need U8, U16, U32, F32, or F64 grayscale TIFF."
+                        .into(),
+                ))
+            }
         };
 
         ndarray::Array2::from_shape_vec((self.height, self.width), pixels)

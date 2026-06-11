@@ -63,7 +63,11 @@ pub fn welch_t_test(a: &[f32], b: &[f32]) -> Result<TestResult, FiarflyError> {
     let va = sample_std(a).powi(2);
     let vb = sample_std(b).powi(2);
     if va == 0.0 && vb == 0.0 {
-        let p = if (ma - mb).abs() < f64::EPSILON { 1.0 } else { 0.0 };
+        let p = if (ma - mb).abs() < f64::EPSILON {
+            1.0
+        } else {
+            0.0
+        };
         return Ok(TestResult {
             test_name: "Welch t",
             statistic: 0.0,
@@ -78,9 +82,13 @@ pub fn welch_t_test(a: &[f32], b: &[f32]) -> Result<TestResult, FiarflyError> {
     let t = (ma - mb) / se;
     // Welch–Satterthwaite df.
     let num = (va / na as f64 + vb / nb as f64).powi(2);
-    let den = (va / na as f64).powi(2) / (na as f64 - 1.0)
-        + (vb / nb as f64).powi(2) / (nb as f64 - 1.0);
-    let df = if den > 0.0 { num / den } else { (na + nb - 2) as f64 };
+    let den =
+        (va / na as f64).powi(2) / (na as f64 - 1.0) + (vb / nb as f64).powi(2) / (nb as f64 - 1.0);
+    let df = if den > 0.0 {
+        num / den
+    } else {
+        (na + nb - 2) as f64
+    };
     let p = two_sided_t_p(t, df);
     let d = cohens_d(a, b);
     Ok(TestResult {

@@ -2,13 +2,15 @@
 //!
 //! Each frame is corrected against a static initial template using
 //! full-image FFT cross-correlation. All frames are processed in parallel
-//! with rayon; each worker creates its own FftPlanner.
+//! with rayon via `map_init`, so each worker reuses a single `FftPlanner`
+//! across the frames it handles. The template's FFT is static, so it is
+//! computed once up front and reused for every frame.
 
-use rustfft::{FftPlanner, num_complex::Complex};
+use super::{CorrectionResult, MotionCorrectionParams, ShiftMap};
+use crate::{FiarflyError, Frame, ImageStack};
 use ndarray::s;
 use rayon::prelude::*;
-use crate::{FiarflyError, Frame, ImageStack};
-use super::{CorrectionResult, MotionCorrectionParams, ShiftMap};
+use rustfft::{num_complex::Complex, FftPlanner};
 
 pub fn correct_rigid(
     stack: &ImageStack,
@@ -20,7 +22,9 @@ pub fn correct_rigid(
         return Err(FiarflyError::InvalidParameter("Empty stack".into()));
     }
 
-    if let Some(tx) = progress { let _ = tx.send(0.0); }
+    if let Some(tx) = progress {
+        let _ = tx.send(0.0);
+    }
 
     // Build initial template from first bin_width frames.
     let bin = params.bin_width.min(n_frames);
@@ -32,14 +36,21 @@ pub fn correct_rigid(
 
     let max_shift = params.max_shift;
 
-    // Process all frames in parallel against the static template.
-    // Each parallel closure creates its own FftPlanner (not Sync).
+    // The template is static, so transform it once and reuse the spectrum
+    // for every frame's cross-correlation (saves one fft2 per frame).
+    let t_freq = {
+        let mut planner = FftPlanner::<f32>::new();
+        fft2(&template, &mut planner)
+    };
+
+    // Process all frames in parallel against the static template. `map_init`
+    // gives each rayon worker one FftPlanner that it reuses across frames,
+    // rather than rebuilding (and re-caching plans) on every iteration.
     let results: Vec<(Frame, [f64; 2], f32)> = (0..n_frames)
         .into_par_iter()
-        .map(|i| {
+        .map_init(FftPlanner::<f32>::new, |planner, i| {
             let frame = stack.slice(s![i, .., ..]).to_owned();
-            let mut planner = FftPlanner::<f32>::new();
-            let ncc = cross_correlate_2d(&frame, &template, &mut planner);
+            let ncc = cross_correlate_2d_freq(&frame, &t_freq, planner);
             let (dy, dx) = find_peak_with_subpixel(&ncc, height, width, max_shift);
             let shifted = shift_frame(&frame, dy, dx);
             let score = pearson_correlation(shifted.view(), template.view());
@@ -47,7 +58,9 @@ pub fn correct_rigid(
         })
         .collect();
 
-    if let Some(tx) = progress { let _ = tx.send(1.0); }
+    if let Some(tx) = progress {
+        let _ = tx.send(1.0);
+    }
 
     let mut corrected = ImageStack::zeros([n_frames, height, width]);
     let mut shifts = Vec::with_capacity(n_frames);
@@ -60,7 +73,10 @@ pub fn correct_rigid(
 
     Ok(CorrectionResult {
         corrected,
-        shifts: ShiftMap { shifts, field: None },
+        shifts: ShiftMap {
+            shifts,
+            field: None,
+        },
         correlation_scores: scores,
     })
 }
@@ -83,10 +99,10 @@ pub fn shift_frame(frame: &Frame, dy: f64, dx: f64) -> Frame {
             let x0 = sx.floor() as usize;
             let fy = sy.fract();
             let fx = sx.fract();
-            let v = (1.0 - fy) * (1.0 - fx) * frame[[y0,     x0    ]] as f64
-                  + (1.0 - fy) *        fx  * frame[[y0,     x0 + 1]] as f64
-                  +        fy  * (1.0 - fx) * frame[[y0 + 1, x0    ]] as f64
-                  +        fy  *        fx  * frame[[y0 + 1, x0 + 1]] as f64;
+            let v = (1.0 - fy) * (1.0 - fx) * frame[[y0, x0]] as f64
+                + (1.0 - fy) * fx * frame[[y0, x0 + 1]] as f64
+                + fy * (1.0 - fx) * frame[[y0 + 1, x0]] as f64
+                + fy * fx * frame[[y0 + 1, x0 + 1]] as f64;
             out[[oy, ox]] = v as f32;
         }
     }
@@ -100,11 +116,21 @@ pub fn cross_correlate_2d(
     template: &Frame,
     planner: &mut FftPlanner<f32>,
 ) -> Vec<f32> {
+    let t_freq = fft2(template, planner);
+    cross_correlate_2d_freq(frame, &t_freq, planner)
+}
+
+/// Like [`cross_correlate_2d`] but takes the template already in the frequency
+/// domain, so a static template can be transformed once and reused per frame.
+pub fn cross_correlate_2d_freq(
+    frame: &Frame,
+    t_freq: &[Complex<f32>],
+    planner: &mut FftPlanner<f32>,
+) -> Vec<f32> {
     let (h, w) = frame.dim();
     let mut f_freq = fft2(frame, planner);
-    let t_freq = fft2(template, planner);
     // F * conj(T) in frequency domain = cross-correlation in spatial domain.
-    for (f, t) in f_freq.iter_mut().zip(&t_freq) {
+    for (f, t) in f_freq.iter_mut().zip(t_freq) {
         *f *= t.conj();
     }
     ifft2(&mut f_freq, h, w, planner)
@@ -126,21 +152,34 @@ fn fft2(frame: &Frame, planner: &mut FftPlanner<f32>) -> Vec<Complex<f32>> {
     let col_fft = planner.plan_fft_forward(h);
     let mut col = vec![Complex::new(0.0f32, 0.0); h];
     for c in 0..w {
-        for r in 0..h { col[r] = buf[r * w + c]; }
+        for r in 0..h {
+            col[r] = buf[r * w + c];
+        }
         col_fft.process(&mut col);
-        for r in 0..h { buf[r * w + c] = col[r]; }
+        for r in 0..h {
+            buf[r * w + c] = col[r];
+        }
     }
     buf
 }
 
-fn ifft2(buf: &mut Vec<Complex<f32>>, h: usize, w: usize, planner: &mut FftPlanner<f32>) -> Vec<f32> {
+fn ifft2(
+    buf: &mut [Complex<f32>],
+    h: usize,
+    w: usize,
+    planner: &mut FftPlanner<f32>,
+) -> Vec<f32> {
     // Column-wise inverse FFT.
     let col_ifft = planner.plan_fft_inverse(h);
     let mut col = vec![Complex::new(0.0f32, 0.0); h];
     for c in 0..w {
-        for r in 0..h { col[r] = buf[r * w + c]; }
+        for r in 0..h {
+            col[r] = buf[r * w + c];
+        }
         col_ifft.process(&mut col);
-        for r in 0..h { buf[r * w + c] = col[r]; }
+        for r in 0..h {
+            buf[r * w + c] = col[r];
+        }
     }
 
     // Row-wise inverse FFT.
@@ -157,30 +196,41 @@ fn ifft2(buf: &mut Vec<Complex<f32>>, h: usize, w: usize, planner: &mut FftPlann
 
 /// Find cross-correlation peak within `max_shift` pixels of the origin (with wrap),
 /// then refine to sub-pixel precision via Gaussian fit.
-pub fn find_peak_with_subpixel(
-    ncc: &[f32],
-    h: usize,
-    w: usize,
-    max_shift: usize,
-) -> (f64, f64) {
+pub fn find_peak_with_subpixel(ncc: &[f32], h: usize, w: usize, max_shift: usize) -> (f64, f64) {
     let mut best = f32::NEG_INFINITY;
     let mut py = 0usize;
     let mut px = 0usize;
 
     for r in 0..h {
         let ay = if r <= h / 2 { r } else { h - r }; // unsigned distance from 0
-        if ay > max_shift { continue; }
+        if ay > max_shift {
+            continue;
+        }
         for c in 0..w {
             let ax = if c <= w / 2 { c } else { w - c };
-            if ax > max_shift { continue; }
+            if ax > max_shift {
+                continue;
+            }
             let v = ncc[r * w + c];
-            if v > best { best = v; py = r; px = c; }
+            if v > best {
+                best = v;
+                py = r;
+                px = c;
+            }
         }
     }
 
     // Convert to signed shift.
-    let dy = if py <= h / 2 { py as f64 } else { py as f64 - h as f64 };
-    let dx = if px <= w / 2 { px as f64 } else { px as f64 - w as f64 };
+    let dy = if py <= h / 2 {
+        py as f64
+    } else {
+        py as f64 - h as f64
+    };
+    let dx = if px <= w / 2 {
+        px as f64
+    } else {
+        px as f64 - w as f64
+    };
 
     // Gaussian sub-pixel refinement.
     let slog = |v: f32| if v > 1e-10 { v.ln() as f64 } else { -23.0_f64 };
@@ -190,38 +240,55 @@ pub fn find_peak_with_subpixel(
         let v0 = slog(ncc[py * w + px]);
         let vp = slog(ncc[(py + 1) * w + px]);
         let d = vm - 2.0 * v0 + vp;
-        if d.abs() > 1e-10 { (0.5 * (vm - vp) / d).clamp(-1.0, 1.0) } else { 0.0 }
-    } else { 0.0 };
+        if d.abs() > 1e-10 {
+            (0.5 * (vm - vp) / d).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
 
     let sub_x = if px > 0 && px < w - 1 {
         let vm = slog(ncc[py * w + px - 1]);
         let v0 = slog(ncc[py * w + px]);
         let vp = slog(ncc[py * w + px + 1]);
         let d = vm - 2.0 * v0 + vp;
-        if d.abs() > 1e-10 { (0.5 * (vm - vp) / d).clamp(-1.0, 1.0) } else { 0.0 }
-    } else { 0.0 };
+        if d.abs() > 1e-10 {
+            (0.5 * (vm - vp) / d).clamp(-1.0, 1.0)
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
 
     (dy + sub_y, dx + sub_x)
 }
 
 // --- Quality metric ---
 
-pub fn pearson_correlation(
-    a: ndarray::ArrayView2<f32>,
-    b: ndarray::ArrayView2<f32>,
-) -> f32 {
+pub fn pearson_correlation(a: ndarray::ArrayView2<f32>, b: ndarray::ArrayView2<f32>) -> f32 {
     let n = a.len();
-    if n == 0 { return 0.0; }
+    if n == 0 {
+        return 0.0;
+    }
     let ma = a.iter().sum::<f32>() / n as f32;
     let mb = b.iter().sum::<f32>() / n as f32;
     let (mut cov, mut va, mut vb) = (0.0f64, 0.0f64, 0.0f64);
     for (&av, &bv) in a.iter().zip(b.iter()) {
         let da = (av - ma) as f64;
         let db = (bv - mb) as f64;
-        cov += da * db; va += da * da; vb += db * db;
+        cov += da * db;
+        va += da * da;
+        vb += db * db;
     }
     let d = (va * vb).sqrt();
-    if d > 1e-15 { (cov / d) as f32 } else { 0.0 }
+    if d > 1e-15 {
+        (cov / d) as f32
+    } else {
+        0.0
+    }
 }
 
 // --- Tests ---
@@ -281,7 +348,10 @@ mod tests {
         // Shifts for frames 1..n should be approximately [-2, 0].
         for i in 1..n {
             let [dy, _dx] = result.shifts.shifts[i];
-            assert!(dy.abs() > 0.5, "Expected nonzero shift for frame {i}, got {dy}");
+            assert!(
+                dy.abs() > 0.5,
+                "Expected nonzero shift for frame {i}, got {dy}"
+            );
         }
     }
 }

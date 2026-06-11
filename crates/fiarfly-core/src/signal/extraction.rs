@@ -1,9 +1,9 @@
 //! Raw fluorescence extraction from ROI masks.
 
+use crate::roi::RoiMask;
+use crate::{FiarflyError, ImageStack};
 use ndarray::{s, Array2};
 use rayon::prelude::*;
-use crate::{FiarflyError, ImageStack};
-use crate::roi::RoiMask;
 
 /// For each ROI mask, compute the mean pixel intensity for every frame.
 ///
@@ -14,7 +14,9 @@ pub fn extract_raw_fluorescence(
     masks: &[RoiMask],
 ) -> Result<Array2<f32>, FiarflyError> {
     if masks.is_empty() {
-        return Err(FiarflyError::InvalidParameter("No ROI masks provided".into()));
+        return Err(FiarflyError::InvalidParameter(
+            "No ROI masks provided".into(),
+        ));
     }
     let (n_frames, height, width) = stack.dim();
 
@@ -35,11 +37,16 @@ pub fn extract_raw_fluorescence(
         .into_par_iter()
         .map(|i| {
             let frame = stack.slice(s![i, .., ..]);
-            masks.iter().map(|mask| {
-                if mask.pixels.is_empty() { return 0.0f32; }
-                let sum: f32 = mask.pixels.iter().map(|&[r, c]| frame[[r, c]]).sum();
-                sum / mask.pixels.len() as f32
-            }).collect()
+            masks
+                .iter()
+                .map(|mask| {
+                    if mask.pixels.is_empty() {
+                        return 0.0f32;
+                    }
+                    let sum: f32 = mask.pixels.iter().map(|&[r, c]| frame[[r, c]]).sum();
+                    sum / mask.pixels.len() as f32
+                })
+                .collect()
         })
         .collect();
 
@@ -67,7 +74,11 @@ mod tests {
         stack.fill(0.5);
 
         let mut mask = RoiMask::new("roi_001");
-        for r in 0..4usize { for c in 0..4usize { mask.pixels.push([r, c]); } }
+        for r in 0..4usize {
+            for c in 0..4usize {
+                mask.pixels.push([r, c]);
+            }
+        }
 
         let raw = extract_raw_fluorescence(&stack, &[mask]).unwrap();
         assert_eq!(raw.dim(), (1, 5));

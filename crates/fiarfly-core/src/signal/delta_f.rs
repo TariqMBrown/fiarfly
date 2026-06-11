@@ -1,8 +1,8 @@
 //! ΔF/F computation and neuropil correction.
 
+use crate::FiarflyError;
 use ndarray::{s, Array2};
 use rayon::prelude::*;
-use crate::FiarflyError;
 
 /// Parameters for ΔF/F baseline estimation.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -15,7 +15,10 @@ pub struct DeltaFParams {
 
 impl Default for DeltaFParams {
     fn default() -> Self {
-        Self { baseline_percentile: 8.0, window_frames: 300 }
+        Self {
+            baseline_percentile: 8.0,
+            window_frames: 300,
+        }
     }
 }
 
@@ -38,13 +41,19 @@ pub fn compute_delta_f(
         .into_par_iter()
         .map(|roi| {
             let trace = raw.slice(s![roi, ..]);
-            (0..n_frames).map(|t| {
-                let start = if t >= half_w { t - half_w } else { 0 };
-                let end = (t + half_w + 1).min(n_frames);
-                let window: Vec<f32> = trace.slice(s![start..end]).to_vec();
-                let f0 = percentile_sorted(&window, pct);
-                if f0.abs() > 1e-10 { (trace[t] - f0) / f0 } else { 0.0 }
-            }).collect()
+            (0..n_frames)
+                .map(|t| {
+                    let start = t.saturating_sub(half_w);
+                    let end = (t + half_w + 1).min(n_frames);
+                    let window: Vec<f32> = trace.slice(s![start..end]).to_vec();
+                    let f0 = percentile_sorted(&window, pct);
+                    if f0.abs() > 1e-10 {
+                        (trace[t] - f0) / f0
+                    } else {
+                        0.0
+                    }
+                })
+                .collect()
         })
         .collect();
 
@@ -67,7 +76,9 @@ pub fn apply_neuropil_correction(
 ) -> Result<Array2<f32>, FiarflyError> {
     if soma.shape() != neuropil.shape() {
         return Err(FiarflyError::DimensionMismatch(format!(
-            "soma {:?} ≠ neuropil {:?}", soma.shape(), neuropil.shape()
+            "soma {:?} ≠ neuropil {:?}",
+            soma.shape(),
+            neuropil.shape()
         )));
     }
     Ok(soma - &(neuropil * r))
@@ -76,7 +87,9 @@ pub fn apply_neuropil_correction(
 // --- helpers ---
 
 fn percentile_sorted(data: &[f32], p: f32) -> f32 {
-    if data.is_empty() { return 0.0; }
+    if data.is_empty() {
+        return 0.0;
+    }
     let mut sorted = data.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let idx = ((p / 100.0) * (sorted.len() - 1) as f32).round() as usize;
@@ -98,18 +111,29 @@ mod tests {
         for t in 0..n {
             raw[[0, t]] = if t < n / 2 { 0.5 } else { 1.0 };
         }
-        let params = DeltaFParams { baseline_percentile: 8.0, window_frames: 20 };
+        let params = DeltaFParams {
+            baseline_percentile: 8.0,
+            window_frames: 20,
+        };
         let df = compute_delta_f(&raw, &params).unwrap();
         // Before step: ΔF/F ≈ 0.
-        assert!(df[[0, 10]].abs() < 0.1, "expected ~0 before step, got {}", df[[0, 10]]);
+        assert!(
+            df[[0, 10]].abs() < 0.1,
+            "expected ~0 before step, got {}",
+            df[[0, 10]]
+        );
         // At t=55 the rolling window [45, 66) spans both pre- and post-step frames,
         // so F0 is driven by the pre-step percentile (≈ 0.5) → ΔF/F ≈ 1.0.
-        assert!(df[[0, 55]] > 0.5, "expected >0.5 near step, got {}", df[[0, 55]]);
+        assert!(
+            df[[0, 55]] > 0.5,
+            "expected >0.5 near step, got {}",
+            df[[0, 55]]
+        );
     }
 
     #[test]
     fn neuropil_correction_subtracts() {
-        let soma     = Array2::from_elem((1, 4), 1.0f32);
+        let soma = Array2::from_elem((1, 4), 1.0f32);
         let neuropil = Array2::from_elem((1, 4), 0.5f32);
         let corrected = apply_neuropil_correction(&soma, &neuropil, 0.7).unwrap();
         let expected = 1.0 - 0.7 * 0.5;

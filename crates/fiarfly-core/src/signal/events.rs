@@ -10,9 +10,9 @@
 //! Reference approach: comparable to the standard used in Suite2p and CaImAn
 //! event detection; see also Greenberg & Bhatt 2022 (CaPTure toolbox).
 
+use crate::FiarflyError;
 use ndarray::{s, Array2};
 use rayon::prelude::*;
-use crate::FiarflyError;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -83,8 +83,13 @@ impl EventResult {
     /// Mean event frequency in events per frame for ROI `i`.
     /// Multiply by `frame_rate` to convert to Hz.
     pub fn event_rate(&self, roi: usize, n_frames: usize) -> f32 {
-        if n_frames == 0 { return 0.0; }
-        self.events.get(roi).map(|e| e.len() as f32 / n_frames as f32).unwrap_or(0.0)
+        if n_frames == 0 {
+            return 0.0;
+        }
+        self.events
+            .get(roi)
+            .map(|e| e.len() as f32 / n_frames as f32)
+            .unwrap_or(0.0)
     }
 }
 
@@ -112,9 +117,9 @@ pub fn detect_events(
         })
         .collect();
 
-    let mut events_out  = Vec::with_capacity(n_rois);
-    let mut noise_std   = Vec::with_capacity(n_rois);
-    let mut threshold   = Vec::with_capacity(n_rois);
+    let mut events_out = Vec::with_capacity(n_rois);
+    let mut noise_std = Vec::with_capacity(n_rois);
+    let mut threshold = Vec::with_capacity(n_rois);
 
     for (evs, ns, thr) in results {
         events_out.push(evs);
@@ -122,7 +127,11 @@ pub fn detect_events(
         threshold.push(thr);
     }
 
-    Ok(EventResult { events: events_out, noise_std, threshold })
+    Ok(EventResult {
+        events: events_out,
+        noise_std,
+        threshold,
+    })
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,7 +197,9 @@ fn detect_single_roi(y: &[f32], params: &EventDetectionParams) -> (Vec<CaEvent>,
 /// Merge events whose peaks are within `min_interval` frames of each other.
 /// When two events are merged, the one with the higher amplitude is kept.
 fn merge_nearby_events(mut events: Vec<CaEvent>, min_interval: usize) -> Vec<CaEvent> {
-    if events.len() < 2 { return events; }
+    if events.len() < 2 {
+        return events;
+    }
     events.sort_by_key(|e| e.peak_frame);
 
     let mut merged: Vec<CaEvent> = Vec::with_capacity(events.len());
@@ -197,14 +208,14 @@ fn merge_nearby_events(mut events: Vec<CaEvent>, min_interval: usize) -> Vec<CaE
             if ev.peak_frame - last.peak_frame < min_interval {
                 // Keep the higher-amplitude event, expand onset/offset.
                 if ev.amplitude > last.amplitude {
-                    let new_onset  = last.onset_frame.min(ev.onset_frame);
+                    let new_onset = last.onset_frame.min(ev.onset_frame);
                     let new_offset = last.offset_frame.max(ev.offset_frame);
                     *last = ev;
-                    last.onset_frame  = new_onset;
+                    last.onset_frame = new_onset;
                     last.offset_frame = new_offset;
                     last.duration_frames = last.offset_frame - last.onset_frame + 1;
                 } else {
-                    last.onset_frame  = last.onset_frame.min(ev.onset_frame);
+                    last.onset_frame = last.onset_frame.min(ev.onset_frame);
                     last.offset_frame = last.offset_frame.max(ev.offset_frame);
                     last.duration_frames = last.offset_frame - last.onset_frame + 1;
                 }
@@ -235,7 +246,9 @@ fn find_half_decay(y: &[f32], peak_frame: usize, amplitude: f32) -> Option<usize
 /// Estimate per-trace noise std using median absolute deviation of first
 /// differences.  Robust to calcium transients.
 pub(crate) fn noise_std_mad(y: &[f32]) -> f32 {
-    if y.len() < 2 { return 1.0; }
+    if y.len() < 2 {
+        return 1.0;
+    }
     let mut diffs: Vec<f32> = y.windows(2).map(|w| (w[1] - w[0]).abs()).collect();
     diffs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let median = diffs[diffs.len() / 2];
@@ -277,10 +290,16 @@ mod tests {
         let result = detect_events(&arr, &params).unwrap();
         let events = &result.events[0];
         assert_eq!(events.len(), 2, "Expected 2 events, got {}", events.len());
-        assert!(events[0].peak_frame >= 28 && events[0].peak_frame <= 32,
-            "First peak frame {} not near 30", events[0].peak_frame);
-        assert!(events[1].peak_frame >= 128 && events[1].peak_frame <= 132,
-            "Second peak frame {} not near 130", events[1].peak_frame);
+        assert!(
+            events[0].peak_frame >= 28 && events[0].peak_frame <= 32,
+            "First peak frame {} not near 30",
+            events[0].peak_frame
+        );
+        assert!(
+            events[1].peak_frame >= 128 && events[1].peak_frame <= 132,
+            "Second peak frame {} not near 130",
+            events[1].peak_frame
+        );
     }
 
     #[test]
@@ -306,7 +325,10 @@ mod tests {
         let result = detect_events(&arr, &params).unwrap();
         let events = &result.events[0];
         assert!(!events.is_empty());
-        assert!((events[0].amplitude - 2.0).abs() < 0.01,
-            "Amplitude {} ≠ 2.0", events[0].amplitude);
+        assert!(
+            (events[0].amplitude - 2.0).abs() < 0.01,
+            "Amplitude {} ≠ 2.0",
+            events[0].amplitude
+        );
     }
 }

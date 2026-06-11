@@ -6,17 +6,17 @@
 //!
 //! All metrics return one value per ROI (`Vec<f32>`).
 
-pub mod window;
 mod metric;
+pub mod window;
 
-pub use window::{ResolvedRange, Window};
 pub use metric::{
-    auc_trapezoid, dff_at_frame, dff_window_mean, dff_window_peak,
-    latency_to_peak_frames, rise_time_frames, Metric,
+    auc_trapezoid, dff_at_frame, dff_window_mean, dff_window_peak, latency_to_peak_frames,
+    rise_time_frames, Metric,
 };
+pub use window::{ResolvedRange, Window};
 
-use ndarray::ArrayView2;
 use crate::FiarflyError;
+use ndarray::ArrayView2;
 
 /// Compute one metric over one window for every ROI in `data`.
 ///
@@ -32,13 +32,15 @@ pub fn compute(
         Metric::DffAtFrame => {
             // For a single-frame metric we treat the window's start as the
             // frame of interest.
-            (0..data.nrows()).map(|r| data[[r, resolved.start]]).collect()
+            (0..data.nrows())
+                .map(|r| data[[r, resolved.start]])
+                .collect()
         }
-        Metric::DffWindowMean   => dff_window_mean(data, resolved),
-        Metric::DffWindowPeak   => dff_window_peak(data, resolved),
-        Metric::Auc             => auc_trapezoid(data, resolved, window.frame_rate),
-        Metric::LatencyToPeak   => latency_to_peak_frames(data, resolved, window.frame_rate),
-        Metric::RiseTime        => rise_time_frames(data, resolved, window.frame_rate, 0.1, 0.9),
+        Metric::DffWindowMean => dff_window_mean(data, resolved),
+        Metric::DffWindowPeak => dff_window_peak(data, resolved),
+        Metric::Auc => auc_trapezoid(data, resolved, window.frame_rate),
+        Metric::LatencyToPeak => latency_to_peak_frames(data, resolved, window.frame_rate),
+        Metric::RiseTime => rise_time_frames(data, resolved, window.frame_rate, 0.1, 0.9),
     })
 }
 
@@ -59,11 +61,15 @@ mod integration_tests {
         let mut data = Array2::<f32>::zeros((2, n_frames));
 
         let f1_start = (10.0 * fr) as usize;
-        let f1_end   = (15.0 * fr) as usize;
+        let f1_end = (15.0 * fr) as usize;
         let f2_start = (25.0 * fr) as usize;
-        let f2_end   = (35.0 * fr) as usize;
-        for f in f2_start..f2_end { data[[0, f]] = 1.0; }
-        for f in f1_start..f1_end { data[[1, f]] = 0.5; }
+        let f2_end = (35.0 * fr) as usize;
+        for f in f2_start..f2_end {
+            data[[0, f]] = 1.0;
+        }
+        for f in f1_start..f1_end {
+            data[[1, f]] = 0.5;
+        }
 
         let w1 = Window::seconds(10.0, 15.0, fr);
         let w2 = Window::seconds(25.0, 35.0, fr);
@@ -74,7 +80,7 @@ mod integration_tests {
         assert!(mean1[0] < 0.01);
         assert!((mean1[1] - 0.5).abs() < 0.01);
         assert!((mean2[0] - 1.0).abs() < 0.01);
-        assert!(mean2[1]  < 0.01);
+        assert!(mean2[1] < 0.01);
 
         // AUC should approximately equal step_height × duration.
         let auc1 = compute(data.view(), &w1, Metric::Auc).unwrap();

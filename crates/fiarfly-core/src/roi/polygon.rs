@@ -1,8 +1,8 @@
 //! Polygon ROI type and RoiSet container.
 
-use serde::{Deserialize, Serialize};
-use crate::FiarflyError;
 use super::RoiMask;
+use crate::FiarflyError;
+use serde::{Deserialize, Serialize};
 
 /// A single closed polygon ROI in image-pixel coordinates.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,13 +21,23 @@ impl Roi {
         let mut mask = RoiMask::new(&self.id);
         let verts = &self.vertices;
         let n = verts.len();
-        if n < 3 { return mask; }
+        if n < 3 {
+            return mask;
+        }
 
         // Bounding box (clamped to image).
-        let min_y = verts.iter().map(|v| v[1]).fold(f32::INFINITY, f32::min)
-                        .floor().max(0.0) as usize;
-        let max_y = verts.iter().map(|v| v[1]).fold(f32::NEG_INFINITY, f32::max)
-                        .ceil().min(height as f32) as usize;
+        let min_y = verts
+            .iter()
+            .map(|v| v[1])
+            .fold(f32::INFINITY, f32::min)
+            .floor()
+            .max(0.0) as usize;
+        let max_y = verts
+            .iter()
+            .map(|v| v[1])
+            .fold(f32::NEG_INFINITY, f32::max)
+            .ceil()
+            .min(height as f32) as usize;
 
         for y in min_y..max_y.min(height) {
             let yf = y as f32 + 0.5; // sample at pixel-row center
@@ -47,7 +57,7 @@ impl Roi {
             xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             for pair in xs.chunks_exact(2) {
                 let x_start = pair[0].floor().max(0.0) as usize;
-                let x_end   = pair[1].ceil().min(width as f32) as usize;
+                let x_end = pair[1].ceil().min(width as f32) as usize;
                 for x in x_start..x_end.min(width) {
                     mask.pixels.push([y, x]);
                 }
@@ -95,7 +105,9 @@ impl Roi {
     pub fn contains_point(&self, x: f32, y: f32) -> bool {
         let verts = &self.vertices;
         let n = verts.len();
-        if n < 3 { return false; }
+        if n < 3 {
+            return false;
+        }
         let mut inside = false;
         let mut j = n - 1;
         for i in 0..n {
@@ -128,7 +140,11 @@ pub struct RoiSet {
 
 impl RoiSet {
     pub fn new(name: impl Into<String>, height: usize, width: usize) -> Self {
-        Self { name: name.into(), image_shape: [height, width], rois: Vec::new() }
+        Self {
+            name: name.into(),
+            image_shape: [height, width],
+            rois: Vec::new(),
+        }
     }
 
     pub fn save(&self, path: &std::path::Path) -> Result<(), FiarflyError> {
@@ -161,8 +177,16 @@ mod tests {
 
     fn square_roi(x0: f32, y0: f32, size: f32) -> Roi {
         Roi {
-            id: "test".into(), label: "test".into(), group: None, color: [255, 0, 0],
-            vertices: vec![[x0, y0], [x0 + size, y0], [x0 + size, y0 + size], [x0, y0 + size]],
+            id: "test".into(),
+            label: "test".into(),
+            group: None,
+            color: [255, 0, 0],
+            vertices: vec![
+                [x0, y0],
+                [x0 + size, y0],
+                [x0 + size, y0 + size],
+                [x0, y0 + size],
+            ],
         }
     }
 
@@ -194,7 +218,9 @@ mod tests {
     fn roi_set_round_trip() {
         let mut set = RoiSet::new("test", 64, 64);
         set.add_roi(Roi {
-            id: String::new(), label: "Cell 1".into(), group: Some("L2/3".into()),
+            id: String::new(),
+            label: "Cell 1".into(),
+            group: Some("L2/3".into()),
             color: [255, 0, 0],
             vertices: vec![[10.0, 10.0], [20.0, 10.0], [20.0, 20.0], [10.0, 20.0]],
         });

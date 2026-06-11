@@ -10,7 +10,10 @@ pub struct RoiMask {
 
 impl RoiMask {
     pub fn new(roi_id: impl Into<String>) -> Self {
-        Self { roi_id: roi_id.into(), pixels: Vec::new() }
+        Self {
+            roi_id: roi_id.into(),
+            pixels: Vec::new(),
+        }
     }
 
     pub fn n_pixels(&self) -> usize {

@@ -3,12 +3,12 @@
 //! Implementation spec: IMPLEMENTATION_GUIDE.md §2
 
 mod nonrigid;
-mod rigid;
 mod preprocess;
+mod rigid;
 
 pub use nonrigid::correct_nonrigid;
-pub use rigid::{correct_rigid, pearson_correlation};
 pub use preprocess::{spatial_highpass, SpatialFilterParams};
+pub use rigid::{correct_rigid, pearson_correlation};
 
 use ndarray::Array4;
 use serde::{Deserialize, Serialize};

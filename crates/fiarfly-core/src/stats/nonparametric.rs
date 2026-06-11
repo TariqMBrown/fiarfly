@@ -33,8 +33,7 @@ pub fn mann_whitney_u(a: &[f32], b: &[f32]) -> Result<TestResult, FiarflyError> 
     let n = n1 as f64 + n2 as f64;
     let mu = n1 as f64 * n2 as f64 / 2.0;
     let tie_term = tie_correction(&combined);
-    let variance = n1 as f64 * n2 as f64 / 12.0
-        * ((n + 1.0) - tie_term / (n * (n - 1.0)));
+    let variance = n1 as f64 * n2 as f64 / 12.0 * ((n + 1.0) - tie_term / (n * (n - 1.0)));
     let p = if variance <= 0.0 {
         1.0
     } else {
@@ -74,7 +73,11 @@ pub fn wilcoxon_signed_rank(a: &[f32], b: &[f32]) -> Result<TestResult, FiarflyE
         .zip(b.iter())
         .filter_map(|(x, y)| {
             let d = *x as f64 - *y as f64;
-            if d == 0.0 { None } else { Some((d.abs(), d)) }
+            if d == 0.0 {
+                None
+            } else {
+                Some((d.abs(), d))
+            }
         })
         .collect();
     let n = pairs.len();
@@ -99,8 +102,7 @@ pub fn wilcoxon_signed_rank(a: &[f32], b: &[f32]) -> Result<TestResult, FiarflyE
 
     let mu = n as f64 * (n as f64 + 1.0) / 4.0;
     let tie_term = tie_correction(&abs_diffs);
-    let variance = n as f64 * (n as f64 + 1.0) * (2.0 * n as f64 + 1.0) / 24.0
-        - tie_term / 48.0;
+    let variance = n as f64 * (n as f64 + 1.0) * (2.0 * n as f64 + 1.0) / 24.0 - tie_term / 48.0;
     let p = if variance <= 0.0 {
         1.0
     } else {
@@ -112,7 +114,11 @@ pub fn wilcoxon_signed_rank(a: &[f32], b: &[f32]) -> Result<TestResult, FiarflyE
 
     // Matched-pairs rank-biserial: r = (W+ − W−) / (n(n+1)/2)
     let total = n as f64 * (n as f64 + 1.0) / 2.0;
-    let r = if total > 0.0 { (w_plus - w_minus) / total } else { 0.0 };
+    let r = if total > 0.0 {
+        (w_plus - w_minus) / total
+    } else {
+        0.0
+    };
     Ok(TestResult {
         test_name: "Wilcoxon signed-rank",
         statistic: w,
@@ -167,13 +173,11 @@ pub fn kruskal_wallis(groups: &[&[f32]]) -> Result<TestResult, FiarflyError> {
     }
 
     let df = (groups.len() - 1) as f64;
-    let dist = ChiSquared::new(df).map_err(|e| {
-        FiarflyError::InvalidParameter(format!("chi-squared df={df}: {e}"))
-    })?;
+    let dist = ChiSquared::new(df)
+        .map_err(|e| FiarflyError::InvalidParameter(format!("chi-squared df={df}: {e}")))?;
     let p = 1.0 - dist.cdf(h);
     // Eta-squared from H (Tomczak & Tomczak 2014).
-    let eta_sq = ((h - groups.len() as f64 + 1.0) / (nf - groups.len() as f64))
-        .max(0.0);
+    let eta_sq = ((h - groups.len() as f64 + 1.0) / (nf - groups.len() as f64)).max(0.0);
     Ok(TestResult {
         test_name: "Kruskal-Wallis H",
         statistic: h,

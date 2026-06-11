@@ -12,10 +12,10 @@
 //!
 //! Reference: Stringer & Pachitariu 2019 (Suite2p); Chen et al. 2013 (GCaMP6).
 
+use super::events::noise_std_mad;
+use crate::FiarflyError;
 use ndarray::{s, Array2};
 use rayon::prelude::*;
-use crate::FiarflyError;
-use super::events::noise_std_mad;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -98,8 +98,12 @@ fn quality_single(y: &[f32], params: &QualityParams) -> RoiQuality {
 
     if n == 0 {
         return RoiQuality {
-            snr: 0.0, skewness: 0.0, active_fraction: 0.0,
-            peak_dff: 0.0, noise_std: 0.0, passes: false,
+            snr: 0.0,
+            skewness: 0.0,
+            active_fraction: 0.0,
+            peak_dff: 0.0,
+            noise_std: 0.0,
+            passes: false,
         };
     }
 
@@ -114,19 +118,26 @@ fn quality_single(y: &[f32], params: &QualityParams) -> RoiQuality {
     // Skewness: (mean − mode_approx) / std.
     // We use the Pearson median skewness: 3 × (mean − median) / std.
     let mean: f32 = y.iter().sum::<f32>() / n as f32;
-    let var: f32  = y.iter().map(|&v| (v - mean).powi(2)).sum::<f32>() / n as f32;
-    let std_dev   = var.sqrt().max(1e-10);
-    let median    = median_of(y);
-    let skewness  = 3.0 * (mean - median) / std_dev;
+    let var: f32 = y.iter().map(|&v| (v - mean).powi(2)).sum::<f32>() / n as f32;
+    let std_dev = var.sqrt().max(1e-10);
+    let median = median_of(y);
+    let skewness = 3.0 * (mean - median) / std_dev;
 
     // Active fraction.
     let active_threshold = 2.0 * ns;
-    let active_frames    = y.iter().filter(|&&v| v > active_threshold).count();
-    let active_fraction  = active_frames as f32 / n as f32;
+    let active_frames = y.iter().filter(|&&v| v > active_threshold).count();
+    let active_fraction = active_frames as f32 / n as f32;
 
     let passes = snr >= params.threshold_snr && skewness > 0.0;
 
-    RoiQuality { snr, skewness, active_fraction, peak_dff: peak, noise_std: ns, passes }
+    RoiQuality {
+        snr,
+        skewness,
+        active_fraction,
+        peak_dff: peak,
+        noise_std: ns,
+        passes,
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -134,7 +145,9 @@ fn quality_single(y: &[f32], params: &QualityParams) -> RoiQuality {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn percentile99(y: &[f32]) -> f32 {
-    if y.is_empty() { return 0.0; }
+    if y.is_empty() {
+        return 0.0;
+    }
     let mut sorted = y.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let idx = ((0.99 * (sorted.len() - 1) as f32) as usize).min(sorted.len() - 1);
@@ -142,11 +155,13 @@ fn percentile99(y: &[f32]) -> f32 {
 }
 
 fn median_of(y: &[f32]) -> f32 {
-    if y.is_empty() { return 0.0; }
+    if y.is_empty() {
+        return 0.0;
+    }
     let mut sorted = y.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mid = sorted.len() / 2;
-    if sorted.len() % 2 == 0 {
+    if sorted.len().is_multiple_of(2) {
         (sorted[mid - 1] + sorted[mid]) * 0.5
     } else {
         sorted[mid]
@@ -180,7 +195,11 @@ mod tests {
         let arr = Array2::from_shape_vec((1, 300), y).unwrap();
         let q = compute_quality(&arr, &QualityParams::default()).unwrap();
         assert!(q[0].snr > 3.0, "SNR {} should be > 3", q[0].snr);
-        assert!(q[0].skewness > 0.0, "Skewness {} should be positive", q[0].skewness);
+        assert!(
+            q[0].skewness > 0.0,
+            "Skewness {} should be positive",
+            q[0].skewness
+        );
         assert!(q[0].passes);
     }
 
@@ -194,11 +213,14 @@ mod tests {
     #[test]
     fn snr_scales_with_amplitude() {
         // Use the make_spiky_trace helper so the 99th-percentile captures real signal.
-        let y_low  = make_spiky_trace(300, &[50, 150, 250]);
+        let y_low = make_spiky_trace(300, &[50, 150, 250]);
         // Scale up by 5× for the "high" ROI.
         let y_high: Vec<f32> = y_low.iter().map(|&v| v * 5.0).collect();
         let arr = Array2::from_shape_vec((2, 300), [y_low, y_high].concat()).unwrap();
         let q = compute_quality(&arr, &QualityParams::default()).unwrap();
-        assert!(q[1].snr > q[0].snr, "Higher amplitude should yield higher SNR");
+        assert!(
+            q[1].snr > q[0].snr,
+            "Higher amplitude should yield higher SNR"
+        );
     }
 }

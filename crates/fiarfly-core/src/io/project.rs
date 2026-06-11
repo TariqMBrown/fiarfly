@@ -246,20 +246,17 @@ impl Project {
     /// Append a new run: writes its directory, `run.json`, and parquet files,
     /// then updates and re-saves `project.json`. Returns the new run's id.
     pub fn add_run(&mut self, spec: NewRun<'_>) -> Result<String, FiarflyError> {
-        let id = make_run_id(&spec.name);
+        let id = make_run_id(spec.name);
         let run_dir = self.path.join(RUNS_DIR).join(&id);
         fs::create_dir_all(&run_dir)?;
 
         let (n_rois, n_frames) = spec.raw_f.dim();
 
-        let roi_set: &RoiSet = spec
-            .roi_set
-            .or(self.file.roi_set.as_ref())
-            .ok_or_else(|| {
-                FiarflyError::InvalidParameter(
-                    "ROI set required (in project or run spec) before adding a run".into(),
-                )
-            })?;
+        let roi_set: &RoiSet = spec.roi_set.or(self.file.roi_set.as_ref()).ok_or_else(|| {
+            FiarflyError::InvalidParameter(
+                "ROI set required (in project or run spec) before adding a run".into(),
+            )
+        })?;
 
         // Traces parquet (reuses the existing tidy export path).
         let data = ExportData {
@@ -438,10 +435,7 @@ fn read_parquet_file(path: &Path) -> Result<DataFrame, FiarflyError> {
         .map_err(|e| FiarflyError::Export(format!("parquet read {}: {e}", path.display())))
 }
 
-fn write_events_parquet(
-    events_per_roi: &[Vec<CaEvent>],
-    path: &Path,
-) -> Result<(), FiarflyError> {
+fn write_events_parquet(events_per_roi: &[Vec<CaEvent>], path: &Path) -> Result<(), FiarflyError> {
     let total: usize = events_per_roi.iter().map(|v| v.len()).sum();
     let mut roi_idx: Vec<u32> = Vec::with_capacity(total);
     let mut event_idx: Vec<u32> = Vec::with_capacity(total);
@@ -466,14 +460,14 @@ fn write_events_parquet(
     }
 
     let series: Vec<Series> = vec![
-        Series::new("roi_idx".into(), roi_idx),
-        Series::new("event_idx".into(), event_idx),
-        Series::new("onset_frame".into(), onset),
-        Series::new("peak_frame".into(), peak),
-        Series::new("amplitude".into(), amp),
-        Series::new("offset_frame".into(), offset),
-        Series::new("duration_frames".into(), duration),
-        Series::new("half_decay_frame".into(), half_decay),
+        Series::new("roi_idx", roi_idx),
+        Series::new("event_idx", event_idx),
+        Series::new("onset_frame", onset),
+        Series::new("peak_frame", peak),
+        Series::new("amplitude", amp),
+        Series::new("offset_frame", offset),
+        Series::new("duration_frames", duration),
+        Series::new("half_decay_frame", half_decay),
     ];
     let mut df = DataFrame::new(series).map_err(|e| FiarflyError::Export(e.to_string()))?;
     write_parquet(&mut df, path)?;
@@ -513,13 +507,13 @@ fn write_quality_parquet(
     }
 
     let series: Vec<Series> = vec![
-        Series::new("roi_id".into(), roi_id),
-        Series::new("snr".into(), snr),
-        Series::new("skewness".into(), skewness),
-        Series::new("active_fraction".into(), active_fraction),
-        Series::new("peak_dff".into(), peak_dff),
-        Series::new("noise_std".into(), noise_std),
-        Series::new("passes".into(), passes),
+        Series::new("roi_id", roi_id),
+        Series::new("snr", snr),
+        Series::new("skewness", skewness),
+        Series::new("active_fraction", active_fraction),
+        Series::new("peak_dff", peak_dff),
+        Series::new("noise_std", noise_std),
+        Series::new("passes", passes),
     ];
     let mut df = DataFrame::new(series).map_err(|e| FiarflyError::Export(e.to_string()))?;
     write_parquet(&mut df, path)?;

@@ -41,7 +41,10 @@ pub enum WindowBounds {
 
 impl Window {
     pub fn frames(start: usize, end: usize) -> Self {
-        Self { bounds: WindowBounds::Frames { start, end }, frame_rate: None }
+        Self {
+            bounds: WindowBounds::Frames { start, end },
+            frame_rate: None,
+        }
     }
     pub fn seconds(start: f32, end: f32, frame_rate: f32) -> Self {
         Self {
@@ -113,7 +116,10 @@ mod tests {
     #[test]
     fn seconds_window_requires_frame_rate() {
         let w = Window {
-            bounds: WindowBounds::Seconds { start: 0.0, end: 1.0 },
+            bounds: WindowBounds::Seconds {
+                start: 0.0,
+                end: 1.0,
+            },
             frame_rate: None,
         };
         assert!(w.resolve(100).is_err());

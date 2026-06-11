@@ -33,8 +33,7 @@ pub fn benjamini_hochberg(ps: &[f64]) -> Vec<f64> {
         return Vec::new();
     }
     // Sort ascending.
-    let mut indexed: Vec<(usize, f64)> =
-        ps.iter().copied().enumerate().collect();
+    let mut indexed: Vec<(usize, f64)> = ps.iter().copied().enumerate().collect();
     indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
     // Raw BH-adjusted: q_i = p_i * m / rank

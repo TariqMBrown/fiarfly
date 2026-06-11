@@ -8,12 +8,12 @@
 //! All frames are processed in parallel; each worker thread creates its own
 //! FftPlanner.
 
-use rustfft::FftPlanner;
+use super::rigid::{cross_correlate_2d, find_peak_with_subpixel, pearson_correlation};
+use super::{CorrectionResult, MotionCorrectionParams, ShiftMap};
+use crate::{FiarflyError, Frame, ImageStack};
 use ndarray::{s, Array3};
 use rayon::prelude::*;
-use crate::{FiarflyError, Frame, ImageStack};
-use super::{CorrectionResult, MotionCorrectionParams, ShiftMap};
-use super::rigid::{cross_correlate_2d, find_peak_with_subpixel, pearson_correlation};
+use rustfft::FftPlanner;
 
 pub fn correct_nonrigid(
     stack: &ImageStack,
@@ -25,11 +25,15 @@ pub fn correct_nonrigid(
         return Err(FiarflyError::InvalidParameter("Empty stack".into()));
     }
 
-    if let Some(tx) = progress { let _ = tx.send(0.0); }
+    if let Some(tx) = progress {
+        let _ = tx.send(0.0);
+    }
 
     let [gh, gw] = params.grid_size;
     if gh == 0 || gw == 0 {
-        return Err(FiarflyError::InvalidParameter("grid_size must be > 0".into()));
+        return Err(FiarflyError::InvalidParameter(
+            "grid_size must be > 0".into(),
+        ));
     }
 
     // Number of patches in each dimension.
@@ -90,7 +94,9 @@ pub fn correct_nonrigid(
         })
         .collect();
 
-    if let Some(tx) = progress { let _ = tx.send(1.0); }
+    if let Some(tx) = progress {
+        let _ = tx.send(1.0);
+    }
 
     let mut corrected = ImageStack::zeros([n_frames, height, width]);
     let mut shifts = Vec::with_capacity(n_frames);
@@ -103,7 +109,10 @@ pub fn correct_nonrigid(
 
     Ok(CorrectionResult {
         corrected,
-        shifts: ShiftMap { shifts, field: None },
+        shifts: ShiftMap {
+            shifts,
+            field: None,
+        },
         correlation_scores: scores,
     })
 }
@@ -137,9 +146,9 @@ fn interpolate_displacement(
 
             for d in 0..2usize {
                 let v = (1.0 - fy) * (1.0 - fx) * patch_shifts[[py0, px0, d]]
-                      + (1.0 - fy) *        fx  * patch_shifts[[py0, px1, d]]
-                      +        fy  * (1.0 - fx) * patch_shifts[[py1, px0, d]]
-                      +        fy  *        fx  * patch_shifts[[py1, px1, d]];
+                    + (1.0 - fy) * fx * patch_shifts[[py0, px1, d]]
+                    + fy * (1.0 - fx) * patch_shifts[[py1, px0, d]]
+                    + fy * fx * patch_shifts[[py1, px1, d]];
                 field[[y, x, d]] = v as f32;
             }
         }
@@ -167,10 +176,10 @@ fn apply_displacement(frame: &Frame, disp: &Array3<f32>) -> Frame {
             let x0 = sx.floor() as usize;
             let fy = sy.fract();
             let fx = sx.fract();
-            let v = (1.0 - fy) * (1.0 - fx) * frame[[y0,     x0    ]] as f64
-                  + (1.0 - fy) *        fx  * frame[[y0,     x0 + 1]] as f64
-                  +        fy  * (1.0 - fx) * frame[[y0 + 1, x0    ]] as f64
-                  +        fy  *        fx  * frame[[y0 + 1, x0 + 1]] as f64;
+            let v = (1.0 - fy) * (1.0 - fx) * frame[[y0, x0]] as f64
+                + (1.0 - fy) * fx * frame[[y0, x0 + 1]] as f64
+                + fy * (1.0 - fx) * frame[[y0 + 1, x0]] as f64
+                + fy * fx * frame[[y0 + 1, x0 + 1]] as f64;
             out[[y, x]] = v as f32;
         }
     }
