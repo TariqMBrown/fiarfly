@@ -1,0 +1,56 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+# ── Project metadata ───────────────────────────────────────────────────────────
+
+[project]
+name = "fiarfly"
+version = "0.1.0"
+description = "Calcium imaging analysis — Python interface to FIARfly"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "polars>=0.20",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "maturin>=1.5,<2",
+    "pytest>=8",
+    "pytest-benchmark",
+    "ipykernel",
+    "matplotlib>=3.8",
+    "tifffile>=2024.1",   # used by test_io synthetic TIFF fixture
+]
+
+# ── Maturin (Rust ↔ Python bridge) ────────────────────────────────────────────
+
+[tool.maturin]
+manifest-path = "crates/fiarfly-py/Cargo.toml"
+python-source = "python"
+features = ["pyo3/extension-module"]
+
+# ── uv configuration ──────────────────────────────────────────────────────────
+
+[tool.uv]
+# Tells uv to include the "dev" dependency group when running `uv sync`.
+default-groups = ["dev"]
+
+# ── Dependency groups (PEP 735) ───────────────────────────────────────────────
+
+[dependency-groups]
+dev = [
+    "maturin>=1.5,<2",
+    "pytest>=8",
+    "pytest-benchmark",
+    "ipykernel",
+    "matplotlib>=3.8",
+    "tifffile>=2024.1",
+]
+
+# ── Pytest ────────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]

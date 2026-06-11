@@ -1,0 +1,21 @@
+[package]
+name = "fiarfly-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core computation library for FIARfly calcium imaging analysis"
+license = "MIT"
+
+[dependencies]
+ndarray    = { workspace = true }
+rustfft    = { workspace = true }
+rayon      = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+tiff       = { workspace = true }
+polars     = { workspace = true }
+thiserror  = { workspace = true }
+log        = { workspace = true }
+statrs     = { workspace = true }
+
+[dev-dependencies]
+env_logger = { workspace = true }

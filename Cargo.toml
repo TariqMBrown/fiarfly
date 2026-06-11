@@ -1,0 +1,27 @@
+[workspace]
+members = [
+    "crates/fiarfly-core",
+    "crates/fiarfly-gui",
+    "crates/fiarfly-py",
+]
+resolver = "2"
+
+[profile.release]
+# Keep symbol names so crash report backtraces are readable.
+debug = 1
+
+[profile.dev]
+debug = true
+
+[workspace.dependencies]
+ndarray     = { version = "0.16", features = ["rayon"] }
+rustfft     = "6"
+rayon       = "1"
+serde       = { version = "1", features = ["derive"] }
+serde_json  = "1"
+tiff        = "0.9"
+polars      = { version = "0.42", features = ["parquet", "csv"] }
+thiserror   = "1"
+log         = "0.4"
+env_logger  = "0.11"
+statrs      = "0.17"

@@ -1,0 +1,27 @@
+# Rust
+/target/
+Cargo.lock          # generated; commit if this were a binary-only crate
+
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.dylib
+dist/
+*.egg-info/
+uv.lock             # commit this when the project is ready for reproducible installs
+
+# Maturin build artefacts
+/python/fiarfly/*.so
+/python/fiarfly/*.dylib
+/python/fiarfly/*.pyd
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp

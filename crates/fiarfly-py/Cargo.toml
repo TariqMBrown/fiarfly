@@ -1,0 +1,16 @@
+[package]
+name = "fiarfly-py"
+version = "0.1.0"
+edition = "2021"
+description = "PyO3 Python bindings for FIARfly"
+license = "MIT"
+
+[lib]
+name = "fiarfly"
+crate-type = ["cdylib"]
+
+[dependencies]
+fiarfly-core = { path = "../fiarfly-core" }
+pyo3       = { version = "0.22", features = ["extension-module"] }
+numpy      = "0.22"
+polars     = { workspace = true }

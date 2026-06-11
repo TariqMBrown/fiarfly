@@ -1,0 +1,27 @@
+[package]
+name = "fiarfly-gui"
+version = "0.1.0"
+edition = "2021"
+description = "egui desktop application for FIARfly"
+license = "MIT"
+
+[[bin]]
+name = "fiarfly"
+path = "src/main.rs"
+
+
+[dependencies]
+fiarfly-core = { path = "../fiarfly-core" }
+ndarray    = { workspace = true }
+eframe     = { version = "0.29", features = ["default_fonts"] }
+egui       = "0.29"
+egui_plot  = "0.29"
+rfd        = "0.15"
+dirs-next  = "2"
+image      = "0.25"
+serde      = { workspace = true }
+serde_json = { workspace = true }
+log        = { workspace = true }
+env_logger = { workspace = true }
+earcutr    = "0.4"
+libc       = "0.2"
