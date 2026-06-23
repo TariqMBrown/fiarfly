@@ -48,11 +48,10 @@ fn show_inner(ui: &mut egui::Ui, state: &mut AppState) {
         let was = state.trace_mode.clone();
         ui.radio_value(&mut state.trace_mode, TraceMode::Raw,    "Raw F");
         ui.radio_value(&mut state.trace_mode, TraceMode::DeltaF, "ΔF/F");
-        if state.trace_mode != was {
-            if state.trace_mode == TraceMode::DeltaF && state.dff_use_fixed_baseline {
+        if state.trace_mode != was
+            && state.trace_mode == TraceMode::DeltaF && state.dff_use_fixed_baseline {
                 recompute_fixed_dff(state);
             }
-        }
     });
 
     // ── ΔF/F baseline options ───────────────────────────────────────────────

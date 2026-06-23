@@ -10,7 +10,7 @@ mod effect;
 mod nonparametric;
 mod parametric;
 
-pub use correction::{benjamini_hochberg, bonferroni, MultipleComparisonsCorrection};
+pub use correction::{adjust, benjamini_hochberg, bonferroni, MultipleComparisonsCorrection};
 pub use descriptive::{mean, sample_std, sem};
 pub use effect::{cohens_d, cohens_dz, rank_biserial};
 pub use nonparametric::{kruskal_wallis, mann_whitney_u, wilcoxon_signed_rank};

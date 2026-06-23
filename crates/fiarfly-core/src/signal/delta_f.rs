@@ -101,7 +101,6 @@ fn percentile_sorted(data: &[f32], p: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::array;
 
     #[test]
     fn delta_f_step_response() {

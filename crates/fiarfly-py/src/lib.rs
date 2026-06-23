@@ -3,6 +3,12 @@
 //! Exposes the v0.2 surface — project bundles (PR2), analysis metrics
 //! (PR4), and statistical tests (PR6) — to Python users.
 
+// PyO3's `#[pyfunction]`/`#[pymethods]` macros emit a `.into()` on each
+// function's `Result` to coerce the error into `PyErr`. Our functions already
+// return `PyErr`, so clippy flags the macro-generated conversion against every
+// signature. It's a false positive in expanded code we don't control.
+#![allow(clippy::useless_conversion)]
+
 use std::path::PathBuf;
 
 use numpy::PyReadonlyArray2;

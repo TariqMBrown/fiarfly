@@ -239,9 +239,6 @@ pub struct AppState {
     pub playback_speed: f32,
     pub last_frame_time: Option<Instant>,
 
-    // --- Session ---
-    pub session_path: Option<PathBuf>,
-
     // --- Deferred native dialog (see DialogRequest for why). ---
     pub pending_dialog: Option<DialogRequest>,
 
@@ -490,7 +487,6 @@ impl Default for AppState {
             playing: false,
             playback_speed: 1.0,
             last_frame_time: None,
-            session_path: None,
             pending_dialog: None,
             project: None,
             next_run_name: String::new(),

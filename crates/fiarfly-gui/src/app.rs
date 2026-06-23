@@ -598,7 +598,7 @@ fn process_rss_bytes() -> u64 {
             )
         };
         if ret == libc::KERN_SUCCESS {
-            unsafe { info.assume_init().resident_size as u64 }
+            unsafe { info.assume_init().resident_size }
         } else {
             0
         }

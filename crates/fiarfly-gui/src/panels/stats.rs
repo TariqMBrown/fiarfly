@@ -7,9 +7,7 @@ use std::collections::BTreeMap;
 
 use eframe::egui;
 use egui_plot::{Line, Plot, PlotPoints, Points};
-use fiarfly_core::stats::{
-    benjamini_hochberg, bonferroni, run_test, Comparison, MultipleComparisonsCorrection,
-};
+use fiarfly_core::stats::{adjust, run_test, Comparison, MultipleComparisonsCorrection};
 
 use crate::state::{
     ActivePanel, AppState, StatsAxis, StatsCorrection, StatsKind, StatsRow, SummaryTable,
@@ -264,11 +262,7 @@ fn apply_correction(rows: &mut [StatsRow], method: MultipleComparisonsCorrection
         .map(|(i, _)| i)
         .collect();
     let raw_ps: Vec<f64> = pairwise_idxs.iter().map(|&i| rows[i].p_value).collect();
-    let adj = match method {
-        MultipleComparisonsCorrection::Bonferroni        => bonferroni(&raw_ps),
-        MultipleComparisonsCorrection::BenjaminiHochberg => benjamini_hochberg(&raw_ps),
-        MultipleComparisonsCorrection::None => raw_ps,
-    };
+    let adj = adjust(&raw_ps, method);
     for (k, idx) in pairwise_idxs.iter().enumerate() {
         rows[*idx].p_adjusted = adj[k];
     }

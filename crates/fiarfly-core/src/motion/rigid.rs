@@ -8,9 +8,10 @@
 
 use super::{CorrectionResult, MotionCorrectionParams, ShiftMap};
 use crate::{FiarflyError, Frame, ImageStack};
-use ndarray::s;
-use rayon::prelude::*;
+use ndarray::parallel::prelude::*;
+use ndarray::{s, Axis};
 use rustfft::{num_complex::Complex, FftPlanner};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 pub fn correct_rigid(
     stack: &ImageStack,
@@ -43,30 +44,41 @@ pub fn correct_rigid(
         fft2(&template, &mut planner)
     };
 
-    // Process all frames in parallel against the static template. `map_init`
-    // gives each rayon worker one FftPlanner that it reuses across frames,
-    // rather than rebuilding (and re-caching plans) on every iteration.
-    let results: Vec<(Frame, [f64; 2], f32)> = (0..n_frames)
+    // Process all frames in parallel against the static template, writing each
+    // corrected frame straight into the output stack via `axis_iter_mut`. This
+    // keeps peak memory at ~one stack (the output) plus a per-worker transient,
+    // rather than collecting every shifted frame into a second full-size buffer
+    // before copying — which matters for multi-GB stacks. `map_init` gives each
+    // worker one reusable FftPlanner and its own progress-sender clone (the
+    // `mpsc::Sender` is `!Sync`, so it can't be shared across threads by ref).
+    let mut corrected = ImageStack::zeros([n_frames, height, width]);
+    let done = AtomicUsize::new(0);
+    let meta: Vec<([f64; 2], f32)> = corrected
+        .axis_iter_mut(Axis(0))
         .into_par_iter()
-        .map_init(FftPlanner::<f32>::new, |planner, i| {
-            let frame = stack.slice(s![i, .., ..]).to_owned();
-            let ncc = cross_correlate_2d_freq(&frame, &t_freq, planner);
-            let (dy, dx) = find_peak_with_subpixel(&ncc, height, width, max_shift);
-            let shifted = shift_frame(&frame, dy, dx);
-            let score = pearson_correlation(shifted.view(), template.view());
-            (shifted, [dy, dx], score)
-        })
+        .enumerate()
+        .map_init(
+            || (FftPlanner::<f32>::new(), progress.cloned()),
+            |(planner, tx), (i, mut out_frame)| {
+                let frame = stack.slice(s![i, .., ..]).to_owned();
+                let ncc = cross_correlate_2d_freq(&frame, &t_freq, planner);
+                let (dy, dx) = find_peak_with_subpixel(&ncc, height, width, max_shift);
+                let shifted = shift_frame(&frame, dy, dx);
+                let score = pearson_correlation(shifted.view(), template.view());
+                out_frame.assign(&shifted);
+                if let Some(tx) = tx.as_ref() {
+                    // Atomic counter → real incremental progress for the GUI.
+                    let c = done.fetch_add(1, Ordering::Relaxed) + 1;
+                    let _ = tx.send(c as f32 / n_frames as f32);
+                }
+                ([dy, dx], score)
+            },
+        )
         .collect();
 
-    if let Some(tx) = progress {
-        let _ = tx.send(1.0);
-    }
-
-    let mut corrected = ImageStack::zeros([n_frames, height, width]);
     let mut shifts = Vec::with_capacity(n_frames);
     let mut scores = Vec::with_capacity(n_frames);
-    for (i, (shifted_frame, shift, score)) in results.into_iter().enumerate() {
-        corrected.slice_mut(s![i, .., ..]).assign(&shifted_frame);
+    for (shift, score) in meta {
         shifts.push(shift);
         scores.push(score);
     }

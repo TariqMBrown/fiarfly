@@ -62,16 +62,18 @@ After editing Rust that the Python package uses, rebuild with `./dev.sh build`
 - `release` profile keeps `debug = 1` (symbol names) for readable crash backtraces.
 - `cargo clippy --fix` clears most of the mechanical warning backlog.
 
-## Hot path / gotchas (see CODE_REVIEW_FINDINGS.md, fiarfly)
+## Hot path / gotchas
 
 Motion correction (`motion/rigid.rs`) is the dominant compute cost. Its parallel
-per-frame loop does redundant work:
+per-frame loop has been tuned; the optimizations below are all in place — keep them
+when touching the loop:
 
-- `cross_correlate_2d` recomputes `fft2(template)` per frame though the template is
-  static — hoist it to the frequency domain once before the loop (~⅓ of FFT work).
-- A new `FftPlanner` is built inside `.map()` per frame — use `rayon`'s
-  `map_init(FftPlanner::new, …)` so each worker reuses one planner.
-- Peak memory is ~2× stack size because `results` holds all shifted frames before
-  copying into `corrected`; writing into the output via `axis_iter_mut` + parallel zip
-  halves it (matters for multi-GB stacks).
-- Progress only reports 0% and 100%; an atomic counter would give the GUI real progress.
+- The static template's FFT is hoisted to the frequency domain once before the loop
+  (`t_freq`) and reused per frame via `cross_correlate_2d_freq` (~⅓ of FFT work saved).
+- Each rayon worker reuses one `FftPlanner` via `map_init` rather than rebuilding it
+  per frame.
+- Corrected frames are written straight into the output stack with `axis_iter_mut`
+  (indexed parallel), so peak memory is ~one stack instead of ~2× (no second
+  full-size `results` buffer). Matters for multi-GB stacks.
+- Progress is an `AtomicUsize` counter sent through the `mpsc` channel, giving the GUI
+  real incremental progress. Each worker clones the sender (it's `!Sync`).

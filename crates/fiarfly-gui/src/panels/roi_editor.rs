@@ -645,7 +645,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                                     for (vi, v) in roi.vertices.iter().enumerate() {
                                         let s = img_to_screen(*v);
                                         let d = s.distance(cursor);
-                                        if d < 10.0 && best.map_or(true, |(_, bd)| d < bd) {
+                                        if d < 10.0 && best.is_none_or(|(_, bd)| d < bd) {
                                             best = Some((vi, d));
                                         }
                                     }
@@ -774,14 +774,12 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                 }
 
                 // Right-click or Escape cancels in-progress polygon
-                if response.secondary_clicked()
-                    || ui.input(|i| i.key_pressed(egui::Key::Escape))
-                {
-                    if !draw_state.in_progress.is_empty() {
+                if (response.secondary_clicked()
+                    || ui.input(|i| i.key_pressed(egui::Key::Escape)))
+                    && !draw_state.in_progress.is_empty() {
                         draw_state.in_progress.clear();
                         state.log("ROI drawing cancelled.");
                     }
-                }
 
                 // Pixel coords tooltip
                 if let Some(hover) = response.hover_pos() {

@@ -231,12 +231,7 @@ fn merge_nearby_events(mut events: Vec<CaEvent>, min_interval: usize) -> Vec<CaE
 /// of the peak amplitude.
 fn find_half_decay(y: &[f32], peak_frame: usize, amplitude: f32) -> Option<usize> {
     let half = amplitude * 0.5;
-    for t in (peak_frame + 1)..y.len() {
-        if y[t] <= half {
-            return Some(t);
-        }
-    }
-    None
+    (peak_frame + 1..y.len()).find(|&t| y[t] <= half)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
