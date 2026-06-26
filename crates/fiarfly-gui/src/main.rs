@@ -108,5 +108,6 @@ fn install_crash_handler() {
 }
 
 mod app;
+mod colormap;
 mod panels;
 mod state;

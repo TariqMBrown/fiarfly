@@ -281,10 +281,11 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
 
             if let Some((img_h, img_w)) = state.image_shape() {
                 // ── Texture upload (cached by key) ────────────────────────────
+                let cmap = state.display_colormap;
                 let desired_key = if state.roi_show_projection && state.projection_mean.is_some() {
-                    format!("proj:{:.3}:{:.3}", state.roi_lut_min, state.roi_lut_max)
+                    format!("proj:{:.3}:{:.3}:{}", state.roi_lut_min, state.roi_lut_max, cmap.label())
                 } else {
-                    format!("f{}:{:.3}:{:.3}", state.current_frame, state.roi_lut_min, state.roi_lut_max)
+                    format!("f{}:{:.3}:{:.3}:{}", state.current_frame, state.roi_lut_min, state.roi_lut_max, cmap.label())
                 };
 
                 if state.roi_texture.is_none() || state.roi_texture_key != desired_key {
@@ -312,7 +313,8 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                         };
 
                     if let Some(pixels) = pixels_opt {
-                        let img = egui::ColorImage::from_gray([img_w, img_h], &pixels);
+                        let rgb = cmap.map_u8(&pixels);
+                        let img = egui::ColorImage::from_rgb([img_w, img_h], &rgb);
                         let tex = ui.ctx().load_texture("roi_canvas", img, egui::TextureOptions::LINEAR);
                         state.roi_texture     = Some(tex);
                         state.roi_texture_key = desired_key;

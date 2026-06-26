@@ -47,6 +47,8 @@ The pure computation library. Has **no GUI dependencies, no Python dependencies*
 ### `fiarfly-gui`
 The egui desktop application. Thin orchestration layer that calls `fiarfly-core`. Manages application state, panels, and rendering.
 
+Display-only helpers live alongside the panels — e.g. `colormap.rs` provides ImageJ-style pseudo-color LUTs (Grays/Fire/Ice/Green/Magenta/Viridis/Inferno) mapping a normalized intensity to RGB. The selected LUT (`AppState::display_colormap`) is applied when uploading the raw-fluorescence textures in the Import preview and ROI-editor canvas; it never touches computed values, so it stays in the GUI crate, not `fiarfly-core`.
+
 ### `fiarfly-py`
 PyO3 bindings compiled by `maturin`. Exposes `fiarfly-core` types and functions to Python. The Python-side `fiarfly` package wraps these bindings with Pythonic sugar.
 

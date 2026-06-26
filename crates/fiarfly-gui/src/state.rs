@@ -7,6 +7,7 @@ use fiarfly_core::{
     motion::{MotionCorrectionParams, SpatialFilterParams},
     signal::{DeltaFParams, EventDetectionParams, OasisParams, OasisResult, EventResult, RoiQuality},
 };
+use crate::colormap::Colormap;
 use ndarray::Array2;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -233,6 +234,14 @@ pub struct AppState {
     pub roi_texture: Option<egui::TextureHandle>,
     /// Cache key: encodes source + LUT settings. Empty means stale.
     pub roi_texture_key: String,
+
+    /// Pseudo-color LUT applied to raw-fluorescence display (Import preview and
+    /// ROI-editor canvas). Display-only; does not affect computed values.
+    pub display_colormap: Colormap,
+    /// Import-preview brightness offset, added after normalization. 0 = neutral.
+    pub preview_brightness: f32,
+    /// Import-preview contrast gain about mid-gray. 1 = neutral. Display-only.
+    pub preview_contrast: f32,
 
     // --- Playback ---
     pub playing: bool,
@@ -484,6 +493,9 @@ impl Default for AppState {
             roi_show_projection: false,
             roi_texture: None,
             roi_texture_key: String::new(),
+            display_colormap: Colormap::default(),
+            preview_brightness: 0.0,
+            preview_contrast: 1.0,
             playing: false,
             playback_speed: 1.0,
             last_frame_time: None,
@@ -521,5 +533,46 @@ impl AppState {
     /// Return the best available stack for extraction: corrected > raw.
     pub fn best_stack(&self) -> Option<Arc<ImageStack>> {
         self.corrected.clone().or_else(|| self.stack.clone())
+    }
+
+    /// Clear everything derived from a specific recording's pixels: the
+    /// in-memory/corrected stacks, ROIs, extracted traces, motion-correction
+    /// scores, deconvolution/event/quality results, the analysis & stats
+    /// caches, projections, and cached textures.
+    ///
+    /// Preserves user settings (modality, frame rate, pipeline params, frame
+    /// labels) and any open `.fiarproj` bundle. Called when a new TIFF is
+    /// loaded — otherwise the ROI editor, signal viewer, analysis, etc. keep
+    /// showing stale results from the previous file — and by the Import
+    /// panel's "Reset workspace" button.
+    pub fn reset_derived(&mut self) {
+        // Stacks.
+        self.stack = None;
+        self.corrected = None;
+        // ROIs and extracted traces.
+        self.roi_set = None;
+        self.raw_f = None;
+        self.delta_f = None;
+        self.neuropil_f = None;
+        self.delta_f_fixed = None;
+        // Motion-correction quality.
+        self.shift_scores.clear();
+        // Deconvolution / events / per-ROI quality.
+        self.oasis_result = None;
+        self.event_result = None;
+        self.roi_quality = None;
+        // Analysis + stats result caches.
+        self.analysis.last_summary = None;
+        self.stats_ui.last_results.clear();
+        self.stats_ui.last_error = None;
+        // Projections and cached textures.
+        self.projection_mean = None;
+        self.projection_max = None;
+        self.roi_texture = None;
+        self.roi_texture_key = String::new();
+        self.preview_texture = None;
+        self.preview_frame_loaded = usize::MAX;
+        // Reset progress so a stale bar doesn't linger.
+        self.progress = 0.0;
     }
 }

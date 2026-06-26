@@ -1,6 +1,7 @@
 //! Import panel — load TIFF files, set modality, define frame labels.
 
 use eframe::egui;
+use crate::colormap::Colormap;
 use crate::state::{ActivePanel, AppState, DialogRequest, FrameLabel, Modality};
 
 pub fn open_tiff_dialog(state: &mut AppState) {
@@ -15,12 +16,12 @@ pub fn open_tiff_dialog(state: &mut AppState) {
                     path.file_name().unwrap_or_default().to_string_lossy(),
                     reader.num_frames, reader.height, reader.width
                 ));
+                // Drop ROIs, traces, motion results, projections, and cached
+                // textures from the previous file so nothing stale carries over.
+                state.reset_derived();
                 state.source_path = Some(path);
                 state.tiff_reader = Some(reader);
                 state.current_frame = 0;
-                // Invalidate any cached texture so the new file is shown.
-                state.preview_texture = None;
-                state.preview_frame_loaded = usize::MAX;
             }
             Err(e) => state.log(format!("Error loading TIFF: {e}")),
         }
@@ -45,6 +46,24 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
             if ui.button("Open TIFF…").clicked() {
                 // Deferred: see DialogRequest doc for why.
                 state.pending_dialog = Some(DialogRequest::OpenTiff);
+            }
+            // Clear ROIs/traces/motion/analysis derived from the current file
+            // without re-importing — a clean slate on the same recording.
+            let has_work = state.roi_set.is_some()
+                || state.corrected.is_some()
+                || state.raw_f.is_some();
+            if ui
+                .add_enabled(has_work, egui::Button::new("Reset workspace"))
+                .on_hover_text(
+                    "Clear ROIs, extracted traces, motion-correction, and analysis \
+                     results. Keeps the loaded file, frame labels, and settings. \
+                     (Save ROIs to a project first if you want to keep them.)",
+                )
+                .on_disabled_hover_text("Nothing to reset yet.")
+                .clicked()
+            {
+                state.reset_derived();
+                state.log("Workspace reset — ROIs, traces, and analysis cleared.");
             }
         });
 
@@ -185,6 +204,49 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
             });
         }
 
+        // Pseudo-color LUT selector (display only; never alters pixel values).
+        if has_reader {
+            ui.horizontal(|ui| {
+                ui.label("Color (LUT):");
+                egui::ComboBox::from_id_salt("display_colormap")
+                    .selected_text(state.display_colormap.label())
+                    .show_ui(ui, |ui| {
+                        for cm in Colormap::ALL {
+                            if ui.selectable_value(
+                                &mut state.display_colormap, cm, cm.label(),
+                            ).clicked() {
+                                // Force the cached preview texture to re-render.
+                                state.preview_frame_loaded = usize::MAX;
+                            }
+                        }
+                    });
+            });
+
+            // Brightness / Contrast (display only; never alters pixel values).
+            ui.horizontal(|ui| {
+                ui.label("Brightness:");
+                let b = ui.add(
+                    egui::Slider::new(&mut state.preview_brightness, -1.0..=1.0)
+                        .fixed_decimals(2),
+                );
+                ui.add_space(8.0);
+                ui.label("Contrast:");
+                let c = ui.add(
+                    egui::Slider::new(&mut state.preview_contrast, 0.1..=4.0)
+                        .fixed_decimals(2),
+                );
+                if ui.button("Reset").on_hover_text("Brightness 0, contrast 1×").clicked() {
+                    state.preview_brightness = 0.0;
+                    state.preview_contrast = 1.0;
+                    state.preview_frame_loaded = usize::MAX;
+                }
+                // Re-render the cached preview when either slider moves.
+                if b.changed() || c.changed() {
+                    state.preview_frame_loaded = usize::MAX;
+                }
+            });
+        }
+
         ui.add_space(4.0);
 
         // Frame preview — load texture on demand, cache by frame index.
@@ -197,18 +259,28 @@ pub fn show(ui: &mut egui::Ui, state: &mut AppState) {
                 || state.preview_texture.is_none();
 
             if need_load {
+                let cmap = state.display_colormap;
+                let bright = state.preview_brightness;
+                let contrast = state.preview_contrast;
                 if let Some(reader) = &state.tiff_reader {
                     match reader.get_frame(frame_idx) {
                         Ok(frame) => {
                             let (h, w) = frame.dim();
-                            // Normalise to 0-255 with per-frame min/max contrast.
+                            // Per-frame min/max normalization, then a display-only
+                            // brightness/contrast transform about mid-gray.
                             let min = frame.iter().cloned().fold(f32::INFINITY, f32::min);
                             let max = frame.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
                             let range = (max - min).max(1e-6);
-                            let pixels: Vec<u8> = frame.iter()
-                                .map(|&v| ((v - min) / range * 255.0) as u8)
+                            let gray: Vec<u8> = frame.iter()
+                                .map(|&v| {
+                                    let t0 = (v - min) / range;
+                                    let t = (t0 - 0.5) * contrast + 0.5 + bright;
+                                    (t.clamp(0.0, 1.0) * 255.0) as u8
+                                })
                                 .collect();
-                            let color_img = egui::ColorImage::from_gray([w, h], &pixels);
+                            // Apply the selected pseudo-color LUT (display only).
+                            let rgb = cmap.map_u8(&gray);
+                            let color_img = egui::ColorImage::from_rgb([w, h], &rgb);
                             let tex = ui.ctx().load_texture(
                                 "frame_preview",
                                 color_img,
